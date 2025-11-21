@@ -1,0 +1,18 @@
+defaults:
+  - base_dataset
+_target_: calo_cluster.datasets.cldhits.CLDHitsDataModule
+
+# required fields:
+num_classes: 2
+num_features: 3
+voxel_size: 0.05
+
+batch_size: 7
+
+sparse: True
+
+# dataset-specific fields (should not change):
+cluster_ignore_labels: [0,]
+
+# data location (modify as needed):
+data_dir: /home/laurits/MLPF/oneEventPerFileCLDHits/

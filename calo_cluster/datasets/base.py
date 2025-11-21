@@ -11,8 +11,10 @@ from sklearn.utils import shuffle
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 
-from calo_cluster.datasets.mixins.base import (AbstractBaseDataModule,
-                                               AbstractBaseDataset)
+from calo_cluster.datasets.mixins.base import (
+    AbstractBaseDataModule,
+    AbstractBaseDataset,
+)
 
 
 @dataclass
@@ -22,6 +24,7 @@ class BaseDataset(AbstractBaseDataset, Dataset):
     A subclass of this dataset needs to:
     1. override _get_numpy().
     2. override collate_fn if a different collate method is required for the dataset."""
+
     files: List[Path]
 
     def __post_init__(self):
@@ -35,10 +38,9 @@ class BaseDataset(AbstractBaseDataset, Dataset):
         self._validate(return_dict)
         return return_dict
 
-    def _validate(return_dict):
-        if 'features' not in return_dict or 'coordinates' not in return_dict:
-            raise RuntimeError(
-                'return_dict must contain "features" and "coordinates"!')
+    def _validate(self, return_dict):
+        if "features" not in return_dict or "coordinates" not in return_dict:
+            raise RuntimeError('return_dict must contain "features" and "coordinates"!')
 
     @property
     def collate_fn(self) -> Callable[[List[Any]], Any]:
@@ -100,8 +102,7 @@ class BaseDataModule(AbstractBaseDataModule, pl.LightningDataModule):
     def files(self) -> List[Path]:
         if self._files is None:
             self._files = []
-            self._files.extend(
-                sorted(self.data_dir.glob('*')))
+            self._files.extend(sorted(self.data_dir.glob("*")))
         return self._files
 
     def __post_init__(self):
@@ -116,7 +117,11 @@ class BaseDataModule(AbstractBaseDataModule, pl.LightningDataModule):
         assert all(0.0 <= f <= 1.0 for f in fracs)
         assert self.train_frac + self.test_frac <= 1.0
 
-    def train_val_test_split(self) -> Tuple[Union[List[Path], None], Union[List[Path], None], Union[List[Path], None]]:
+    def train_val_test_split(
+        self,
+    ) -> Tuple[
+        Union[List[Path], None], Union[List[Path], None], Union[List[Path], None]
+    ]:
         """Returns train, val, and test file lists
 
         Assumes that self.files is defined and there is no preset split in the dataset.
@@ -137,14 +142,14 @@ class BaseDataModule(AbstractBaseDataModule, pl.LightningDataModule):
     def setup(self, stage: str = None) -> None:
         train_files, val_files, test_files = self.train_val_test_split()
 
-        logging.debug(f'setting seed={self.seed}')
+        logging.debug(f"setting seed={self.seed}")
         pl.seed_everything(self.seed)
 
-        if stage == 'fit' or stage is None:
-            self.train_dataset = self.make_dataset(train_files, split='train')
-            self.val_dataset = self.make_dataset(val_files, split='val')
-        if stage == 'test' or stage is None:
-            self.test_dataset = self.make_dataset(test_files, split='test')
+        if stage == "fit" or stage is None:
+            self.train_dataset = self.make_dataset(train_files, split="train")
+            self.val_dataset = self.make_dataset(val_files, split="val")
+        if stage == "test" or stage is None:
+            self.test_dataset = self.make_dataset(test_files, split="test")
 
     def dataloader(self, dataset: BaseDataset) -> DataLoader:
         return DataLoader(
@@ -153,7 +158,8 @@ class BaseDataModule(AbstractBaseDataModule, pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=True,
             collate_fn=dataset.collate_fn,
-            worker_init_fn=lambda worker_id: np.random.seed(self.seed + worker_id))
+            worker_init_fn=lambda worker_id: np.random.seed(self.seed + worker_id),
+        )
 
     def train_dataloader(self) -> DataLoader:
         return self.dataloader(self.train_dataset)
@@ -169,18 +175,17 @@ class BaseDataModule(AbstractBaseDataModule, pl.LightningDataModule):
 
     @classmethod
     def from_config(cls, overrides: List[str] = []):
-        config_dir = Path(__file__).parent.parent.parent / 'train_configs'
-        overrides.append('train.batch_size=1')
+        config_dir = Path(__file__).parent.parent.parent / "train_configs"
+        overrides.append("train.batch_size=1")
         overrides = cls.fix_overrides(overrides)
         with initialize_config_dir(config_dir=str(config_dir)):
-            cfg = compose(config_name='config', overrides=overrides)
+            cfg = compose(config_name="config", overrides=overrides)
             dm = hydra.utils.instantiate(cfg.dataset)
         dm.prepare_data()
-        dm.setup('fit')
+        dm.setup("fit")
         return dm
-
 
     @staticmethod
     def fix_overrides(overrides: List[str]):
-        overrides.append('dataset=base_dataset')
+        overrides.append("dataset=base_dataset")
         return overrides

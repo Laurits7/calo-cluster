@@ -1,4 +1,3 @@
-
 import hydra
 import pytorch_lightning as pl
 import torch
@@ -12,7 +11,7 @@ from calo_cluster.utils.comm import is_rank_zero
 
 from .utils import *
 
-__all__ = ['SPVCNN']
+__all__ = ["SPVCNN"]
 torch.autograd.set_detect_anomaly(True)
 
 
@@ -20,12 +19,10 @@ class BasicConvolutionBlock(nn.Module):
     def __init__(self, inc, outc, ks=3, stride=1, dilation=1):
         super().__init__()
         self.net = nn.Sequential(
-            spnn.Conv3d(inc,
-                        outc,
-                        kernel_size=ks,
-                        dilation=dilation,
-                        stride=stride), spnn.BatchNorm(outc),
-            spnn.ReLU(True))
+            spnn.Conv3d(inc, outc, kernel_size=ks, dilation=dilation, stride=stride),
+            spnn.BatchNorm(outc),
+            spnn.ReLU(True),
+        )
 
     def forward(self, x):
         out = self.net(x)
@@ -36,12 +33,10 @@ class BasicDeconvolutionBlock(nn.Module):
     def __init__(self, inc, outc, ks=3, stride=1):
         super().__init__()
         self.net = nn.Sequential(
-            spnn.Conv3d(inc,
-                        outc,
-                        kernel_size=ks,
-                        stride=stride,
-                        transposed=True), spnn.BatchNorm(outc),
-            spnn.ReLU(True))
+            spnn.Conv3d(inc, outc, kernel_size=ks, stride=stride, transposed=True),
+            spnn.BatchNorm(outc),
+            spnn.ReLU(True),
+        )
 
     def forward(self, x):
         return self.net(x)
@@ -51,23 +46,20 @@ class ResidualBlock(nn.Module):
     def __init__(self, inc, outc, ks=3, stride=1, dilation=1):
         super().__init__()
         self.net = nn.Sequential(
-            spnn.Conv3d(inc,
-                        outc,
-                        kernel_size=ks,
-                        dilation=dilation,
-                        stride=stride), spnn.BatchNorm(outc),
+            spnn.Conv3d(inc, outc, kernel_size=ks, dilation=dilation, stride=stride),
+            spnn.BatchNorm(outc),
             spnn.ReLU(True),
-            spnn.Conv3d(outc,
-                        outc,
-                        kernel_size=ks,
-                        dilation=dilation,
-                        stride=1), spnn.BatchNorm(outc))
+            spnn.Conv3d(outc, outc, kernel_size=ks, dilation=dilation, stride=1),
+            spnn.BatchNorm(outc),
+        )
 
-        self.downsample = nn.Sequential() if (inc == outc and stride == 1) else \
-            nn.Sequential(
-                spnn.Conv3d(inc, outc, kernel_size=1,
-                            dilation=1, stride=stride),
-                spnn.BatchNorm(outc)
+        self.downsample = (
+            nn.Sequential()
+            if (inc == outc and stride == 1)
+            else nn.Sequential(
+                spnn.Conv3d(inc, outc, kernel_size=1, dilation=1, stride=stride),
+                spnn.BatchNorm(outc),
+            )
         )
 
         self.relu = spnn.ReLU(True)
@@ -80,34 +72,38 @@ class ResidualBlock(nn.Module):
 class SPVCNN(pl.LightningModule):
     def __init__(self, cfg: OmegaConf):
         super().__init__()
-        self.hparams.update(cfg)
+        self.cfg = cfg
+        # self.requires_semantic = (
+        #     "method" not in self.cfg.embed_criterion
+        # ) or self.cfg.embed_criterion.method in ["ignore", "separate"]
+        self.hparams.update(cfg.model)
         if is_rank_zero():
-            self.save_hyperparameters(cfg)
+            self.save_hyperparameters(cfg.model)
 
-        #self.hparams.optimizer._target_ = 'calo_cluster.training.optimizers.adam_factory'
-        #self.hparams.scheduler._target_ = 'calo_cluster.training.schedulers.one_cycle_lr_factory'
-        self.optimizer_factory = hydra.utils.instantiate(
-            self.hparams.optimizer)
-        self.scheduler_factory = hydra.utils.instantiate(
-            self.hparams.scheduler)
+        # self.hparams.optimizer._target_ = 'calo_cluster.training.optimizers.adam_factory'
+        # self.hparams.scheduler._target_ = 'calo_cluster.training.schedulers.one_cycle_lr_factory'
+        self.optimizer_factory = hydra.utils.instantiate(self.cfg.optimizer)
+        self.scheduler_factory = hydra.utils.instantiate(self.cfg.scheduler)
 
-        task = self.hparams.task
-        assert task in ('instance', 'semantic', 'panoptic')
-        if task == 'instance' or task == 'panoptic':
-            self.embed_criterion = hydra.utils.instantiate(
-                self.hparams.embed_criterion)
-        if task == 'semantic' or task == 'panoptic':
+        task = self.cfg.task
+        assert task in ("instance", "semantic", "panoptic")
+        if task == "instance" or task == "panoptic":
+            self.embed_criterion = hydra.utils.instantiate(self.cfg.embed_criterion)
+        if task == "semantic" or task == "panoptic":
             self.semantic_criterion = hydra.utils.instantiate(
-                self.hparams.semantic_criterion)
+                self.cfg.semantic_criterion
+            )
 
-        cs = [int(self.hparams.model.cr * x) for x in self.hparams.model.cs]
+        cs = [int(self.cfg.model.cr * x) for x in self.cfg.model.cs]
 
         self.stem = nn.Sequential(
-            spnn.Conv3d(self.hparams.dataset.num_features,
-                        cs[0], kernel_size=3, stride=1),
-            spnn.BatchNorm(cs[0]), spnn.ReLU(True),
+            spnn.Conv3d(self.cfg.dataset.num_features, cs[0], kernel_size=3, stride=1),
+            spnn.BatchNorm(cs[0]),
+            spnn.ReLU(True),
             spnn.Conv3d(cs[0], cs[0], kernel_size=3, stride=1),
-            spnn.BatchNorm(cs[0]), spnn.ReLU(True))
+            spnn.BatchNorm(cs[0]),
+            spnn.ReLU(True),
+        )
 
         self.stage1 = nn.Sequential(
             BasicConvolutionBlock(cs[0], cs[0], ks=2, stride=2, dilation=1),
@@ -133,78 +129,83 @@ class SPVCNN(pl.LightningModule):
             ResidualBlock(cs[4], cs[4], ks=3, stride=1, dilation=1),
         )
 
-        self.up1 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[4], cs[5], ks=2, stride=2),
-            nn.Sequential(
-                ResidualBlock(cs[5] + cs[3], cs[5], ks=3, stride=1,
-                              dilation=1),
-                ResidualBlock(cs[5], cs[5], ks=3, stride=1, dilation=1),
-            )
-        ])
-
-        self.up2 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[5], cs[6], ks=2, stride=2),
-            nn.Sequential(
-                ResidualBlock(cs[6] + cs[2], cs[6], ks=3, stride=1,
-                              dilation=1),
-                ResidualBlock(cs[6], cs[6], ks=3, stride=1, dilation=1),
-            )
-        ])
-
-        self.up3 = nn.ModuleList([
-            BasicDeconvolutionBlock(cs[6], cs[7], ks=2, stride=2),
-            nn.Sequential(
-                ResidualBlock(cs[7] + cs[1], cs[7], ks=3, stride=1,
-                              dilation=1),
-                ResidualBlock(cs[7], cs[7], ks=3, stride=1, dilation=1),
-            )
-        ])
-
-        if task == 'semantic' or task == 'panoptic':
-            self.c_up4 = nn.ModuleList([
-                BasicDeconvolutionBlock(cs[7], cs[8], ks=2, stride=2),
+        self.up1 = nn.ModuleList(
+            [
+                BasicDeconvolutionBlock(cs[4], cs[5], ks=2, stride=2),
                 nn.Sequential(
-                    ResidualBlock(cs[8] + cs[0], cs[8], ks=3, stride=1,
-                                  dilation=1),
-                    ResidualBlock(cs[8], cs[8], ks=3, stride=1, dilation=1),
-                )
-            ])
+                    ResidualBlock(cs[5] + cs[3], cs[5], ks=3, stride=1, dilation=1),
+                    ResidualBlock(cs[5], cs[5], ks=3, stride=1, dilation=1),
+                ),
+            ]
+        )
+
+        self.up2 = nn.ModuleList(
+            [
+                BasicDeconvolutionBlock(cs[5], cs[6], ks=2, stride=2),
+                nn.Sequential(
+                    ResidualBlock(cs[6] + cs[2], cs[6], ks=3, stride=1, dilation=1),
+                    ResidualBlock(cs[6], cs[6], ks=3, stride=1, dilation=1),
+                ),
+            ]
+        )
+
+        self.up3 = nn.ModuleList(
+            [
+                BasicDeconvolutionBlock(cs[6], cs[7], ks=2, stride=2),
+                nn.Sequential(
+                    ResidualBlock(cs[7] + cs[1], cs[7], ks=3, stride=1, dilation=1),
+                    ResidualBlock(cs[7], cs[7], ks=3, stride=1, dilation=1),
+                ),
+            ]
+        )
+
+        if task == "semantic" or task == "panoptic":
+            self.c_up4 = nn.ModuleList(
+                [
+                    BasicDeconvolutionBlock(cs[7], cs[8], ks=2, stride=2),
+                    nn.Sequential(
+                        ResidualBlock(cs[8] + cs[0], cs[8], ks=3, stride=1, dilation=1),
+                        ResidualBlock(cs[8], cs[8], ks=3, stride=1, dilation=1),
+                    ),
+                ]
+            )
             self.c_point_transform = nn.Sequential(
                 nn.Linear(cs[6], cs[8]),
                 nn.BatchNorm1d(cs[8]),
                 nn.ReLU(True),
             )
-            self.c_lin = nn.Sequential(nn.Linear(cs[8],
-                                                 self.hparams.dataset.num_classes))
-        if task == 'instance' or task == 'panoptic':
-            self.e_up4 = nn.ModuleList([
-                BasicDeconvolutionBlock(cs[7], cs[8], ks=2, stride=2),
-                nn.Sequential(
-                    ResidualBlock(cs[8] + cs[0], cs[8], ks=3, stride=1,
-                                  dilation=1),
-                    ResidualBlock(cs[8], cs[8], ks=3, stride=1, dilation=1),
-                )
-            ])
+            self.c_lin = nn.Sequential(nn.Linear(cs[8], self.cfg.dataset.num_classes))
+        if task == "instance" or task == "panoptic":
+            self.e_up4 = nn.ModuleList(
+                [
+                    BasicDeconvolutionBlock(cs[7], cs[8], ks=2, stride=2),
+                    nn.Sequential(
+                        ResidualBlock(cs[8] + cs[0], cs[8], ks=3, stride=1, dilation=1),
+                        ResidualBlock(cs[8], cs[8], ks=3, stride=1, dilation=1),
+                    ),
+                ]
+            )
             self.e_point_transform = nn.Sequential(
                 nn.Linear(cs[6], cs[8]),
                 nn.BatchNorm1d(cs[8]),
                 nn.ReLU(True),
             )
-            self.e_lin = nn.Sequential(nn.Linear(cs[8],
-                                                 self.hparams.model.embed_dim))
+            self.e_lin = nn.Sequential(nn.Linear(cs[8], self.cfg.model.embed_dim))
 
-        self.point_transforms = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(cs[0], cs[4]),
-                nn.BatchNorm1d(cs[4]),
-                nn.ReLU(True),
-            ),
-            nn.Sequential(
-                nn.Linear(cs[4], cs[6]),
-                nn.BatchNorm1d(cs[6]),
-                nn.ReLU(True),
-            )
-        ])
+        self.point_transforms = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(cs[0], cs[4]),
+                    nn.BatchNorm1d(cs[4]),
+                    nn.ReLU(True),
+                ),
+                nn.Sequential(
+                    nn.Linear(cs[4], cs[6]),
+                    nn.BatchNorm1d(cs[6]),
+                    nn.ReLU(True),
+                ),
+            ]
+        )
 
         self.weight_initialization()
         self.dropout = nn.Dropout(0.3, True)
@@ -236,10 +237,9 @@ class SPVCNN(pl.LightningModule):
 
     def forward(self, x):
         # x: SparseTensor z: PointTensor
-        z = PointTensor(x.F, x.C.float())
+        z = PointTensor(x.F.float(), x.C.float())
 
-        x0 = initial_voxelize(z, self.hparams.model.pres,
-                              self.hparams.model.vres)
+        x0 = initial_voxelize(z, self.cfg.model.pres, self.cfg.model.vres)
 
         x0 = self.stem(x0)
         z0 = voxel_to_point(x0, z, nearest=False)
@@ -271,12 +271,12 @@ class SPVCNN(pl.LightningModule):
         y3 = torchsparse.cat([y3, x1])
         y3 = self.up3[1](y3)
 
-        task = self.hparams.task
-        if task == 'semantic':
+        task = self.cfg.task
+        if task == "semantic":
             out = self.classifier(y3, x0, z2)
-        elif task == 'instance':
+        elif task == "instance":
             out = self.embedder(y3, x0, z2)
-        elif task == 'panoptic':
+        elif task == "panoptic":
             out = (self.classifier(y3, x0, z2), self.embedder(y3, x0, z2))
         else:
             raise RuntimeError("invalid task!")
@@ -285,114 +285,156 @@ class SPVCNN(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = self.optimizer_factory(self.parameters())
         if self.scheduler_factory is not None:
-            scheduler = self.scheduler_factory(
-                optimizer, self.num_training_steps())
-            scheduler = {'scheduler': scheduler,
-                         'interval': 'step', 'frequency': 1}
+            scheduler = self.scheduler_factory(optimizer, 100)
+            # scheduler = self.scheduler_factory(optimizer, self.num_training_steps())
+            scheduler = {"scheduler": scheduler, "interval": "epoch", "frequency": 1}
             return [optimizer], [scheduler]
         else:
             return optimizer
 
     def step(self, batch, batch_idx, split):
-        task = self.hparams.task
-        if task == 'semantic':
+        task = self.cfg.task
+        if task == "semantic":
             ret = self.semantic_step(batch, split)
-        elif task == 'instance':
+        elif task == "instance":
             ret = self.instance_step(batch, split)
-        elif task == 'panoptic':
+        elif task == "panoptic":
             ret = self.panoptic_step(batch, split)
         else:
             raise RuntimeError("invalid task!")
-        self.log(f'{split}_loss', ret['loss'], sync_dist=(split != 'train'))
+        self.log(
+            f"{split}_loss",
+            ret["loss"],
+            batch_size=batch["features"].F.shape[0],
+            sync_dist=(split != "train"),
+        )
         return ret
 
     def semantic_step(self, batch, split):
-        inputs = batch['features']
+        inputs = batch["features"]
         outputs = self(inputs)
-        targets = batch['semantic_labels'].F.long()
-        sync_dist = (split != 'train')
+        targets = batch["semantic_labels"].F.long()
+        sync_dist = split != "train"
 
         loss = self.semantic_criterion(outputs, targets)
-        self.log(f'{split}_class_loss', loss, sync_dist=sync_dist)
-        ret = {'loss': loss, 'class_loss': loss.detach()}
+        self.log(
+            f"{split}_class_loss",
+            loss,
+            batch_size=batch["features"].F.shape[0],
+            sync_dist=sync_dist,
+        )
+        ret = {"loss": loss, "class_loss": loss.detach()}
         return ret
 
     def instance_step(self, batch, split):
-        inputs = batch['features']
+        inputs = batch["features"]
         outputs = self(inputs)
-        sync_dist = (split != 'train')
+        sync_dist = split != "train"
         subbatch_indices = inputs.C[..., -1]
-        weights = batch.get('weights')
-        instance_targets = batch['instance_labels'].F.long()
+        weights = batch.get("weights")
+        instance_targets = batch["instance_labels"].F.long()
         if type(weights) is SparseTensor:
             weights = weights.F
         else:
             weights = None
 
-        if self.hparams.requires_semantic:
-            semantic_labels = batch['semantic_labels'].F.long()
+        # if self.requires_semantic:
+        if False:
+            semantic_labels = batch["semantic_labels"].F.long()
             loss = self.embed_criterion(
-                outputs, instance_targets, subbatch_indices, weights, semantic_labels=semantic_labels)
+                outputs,
+                instance_targets,
+                subbatch_indices,
+                weights,
+                semantic_labels=semantic_labels,
+            )
         else:
             loss = self.embed_criterion(
-                outputs, instance_targets, subbatch_indices, weights)
-        self.log(f'{split}_embed_loss', loss, sync_dist=sync_dist)
+                outputs, instance_targets, subbatch_indices, weights
+            )
+        self.log(
+            f"{split}_embed_loss",
+            loss,
+            sync_dist=sync_dist,
+            batch_size=batch["features"].F.shape[0],  # number of points/features
+        )
 
-        ret = {'loss': loss, 'embed_loss': loss.detach()}
+        ret = {"loss": loss, "embed_loss": loss.detach()}
         return ret
 
     def panoptic_step(self, batch, split):
-        inputs = batch['features']
+        inputs = batch["features"]
         outputs = self(inputs)
-        semantic_targets = batch['semantic_labels'].F.long()
-        instance_targets = batch['instance_labels'].F.long()
-        sync_dist = (split != 'train')
+        semantic_targets = batch["semantic_labels"].F.long()
+        instance_targets = batch["instance_labels"].F.long()
+        sync_dist = split != "train"
         subbatch_indices = inputs.C[..., -1]
-        weights = batch.get('weights')
+        weights = batch.get("weights")
         if type(weights) is SparseTensor:
             weights = weights.F
         else:
             weights = None
 
         class_loss = self.semantic_criterion(outputs[0], semantic_targets)
-        self.log(f'{split}_class_loss', class_loss, sync_dist=sync_dist)
+        self.log(
+            f"{split}_class_loss",
+            class_loss,
+            batch_size=batch["features"].F.shape[0],
+            sync_dist=sync_dist,
+        )
         embed_loss = self.embed_criterion(
-            outputs[1], instance_targets, subbatch_indices, weights, semantic_labels=semantic_targets)
-        self.log(f'{split}_embed_loss', embed_loss, sync_dist=sync_dist)
+            outputs[1],
+            instance_targets,
+            subbatch_indices,
+            weights,
+            semantic_labels=semantic_targets,
+        )
+        self.log(
+            f"{split}_embed_loss",
+            embed_loss,
+            batch_size=batch["features"].F.shape[0],
+            sync_dist=sync_dist,
+        )
         loss = class_loss + embed_loss
         if type(class_loss) is not float and type(embed_loss) is not float:
-            ret = {'loss': loss, 'class_loss': class_loss.detach(),
-                   'embed_loss': embed_loss.detach()}
+            ret = {
+                "loss": loss,
+                "class_loss": class_loss.detach(),
+                "embed_loss": embed_loss.detach(),
+            }
         else:
-            ret = {'loss': loss}
-        ret = {'loss': loss, 'class_loss': loss.detach()}
+            ret = {"loss": loss}
+        ret = {"loss": loss, "class_loss": loss.detach()}
         return ret
 
     def training_step(self, batch, batch_idx):
-        return self.step(batch, batch_idx, split='train')
+        return self.step(batch, batch_idx, split="train")
 
     def validation_step(self, batch, batch_idx):
-        return self.step(batch, batch_idx, split='val')
+        return self.step(batch, batch_idx, split="val")
 
     def test_step(self, batch, batch_idx):
-        return self.step(batch, batch_idx, split='test')
+        return self.step(batch, batch_idx, split="test")
 
-    def num_training_steps(self) -> int:
-        """Total training steps inferred from datamodule and devices."""
-        if self.trainer.max_steps and self.trainer.max_steps != -1:
-            return self.trainer.max_steps
+    # def num_training_steps(self) -> int:
+    #     """Total training steps inferred from datamodule and devices."""
+    #     if self.trainer.max_steps and self.trainer.max_steps != -1:
+    #         return self.trainer.max_steps
 
-        limit_batches = self.trainer.limit_train_batches
-        batches = len(self.train_dataloader())
-        batches = min(batches, limit_batches) if isinstance(
-            limit_batches, int) else int(limit_batches * batches)
+    #     limit_batches = self.trainer.limit_train_batches
+    #     batches = len(self.train_dataloader())
+    #     batches = (
+    #         min(batches, limit_batches)
+    #         if isinstance(limit_batches, int)
+    #         else int(limit_batches * batches)
+    #     )
 
-        num_devices = max(1, self.trainer.num_gpus, self.trainer.num_processes)
-        if self.trainer.tpu_cores:
-            num_devices = max(num_devices, self.trainer.tpu_cores)
+    #     num_devices = max(1, self.trainer.num_gpus, self.trainer.num_processes)
+    #     if self.trainer.tpu_cores:
+    #         num_devices = max(num_devices, self.trainer.tpu_cores)
 
-        effective_accum = self.trainer.accumulate_grad_batches * num_devices
-        num_steps = (batches // effective_accum) * self.trainer.max_epochs
-        num_steps += batches * self.trainer.max_epochs - num_steps * effective_accum
-        print(f'num steps = {num_steps}')
-        return num_steps
+    #     effective_accum = self.trainer.accumulate_grad_batches * num_devices
+    #     num_steps = (batches // effective_accum) * self.trainer.max_epochs
+    #     num_steps += batches * self.trainer.max_epochs - num_steps * effective_accum
+    #     print(f"num steps = {num_steps}")
+    #     return num_steps
