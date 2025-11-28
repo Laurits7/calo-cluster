@@ -1,8 +1,8 @@
 config_version: 2
-outputs_dir: /global/cscratch1/sd/schuya/calo_cluster/training_outputs
-predictions_dir: /global/cscratch1/sd/schuya/calo_cluster/predictions
-plots_dir: /global/cscratch1/sd/schuya/calo_cluster/plots
-data_dir: /global/cscratch1/sd/schuya/calo_cluster/data
+outputs_dir: /home/laurits/20251128_MLPF_clustering
+predictions_dir: ${outputs_dir}/predictions
+plots_dir: ${outputs_dir}/plots
+data_dir: ${outputs_dir}/data
 hydra:
   run:
     dir: ${outputs_dir}/hydra/${now:%Y-%m-%d}/${now:%H-%M-%S}
@@ -18,9 +18,8 @@ defaults:
   - train: single_gpu
   - dataset: cldhits
   - optimizer: adam
-  - semantic_criterion: cross_entropy_loss
-  - embed_criterion: centroid_all
-  # - embed_criterion: offset
+  # - semantic_criterion: cross_entropy_loss  # Kui see enabled, siis on task "panoptic"
+  - embed_criterion: centroid_all  # eelnevalt offset
   - scheduler: one_cycle_lr
   - model: spvcnn
   # - wandb: upload
