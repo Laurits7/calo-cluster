@@ -17,6 +17,10 @@ from calo_cluster.datasets.mixins.base import (
 )
 
 
+import os
+import glob
+
+
 @dataclass
 class BaseDataset(AbstractBaseDataset, Dataset):
     """Base torch dataset that assumes 1 event per file.
@@ -98,11 +102,18 @@ class BaseDataModule(AbstractBaseDataModule, pl.LightningDataModule):
 
     data_dir: str
 
+    # @property
+    # def files(self) -> List[Path]:
+    #     if self._files is None:
+    #         self._files = []
+    #         self._files.extend(sorted(self.data_dir.glob("*")))
+    #     return self._files
+
     @property
     def files(self) -> List[Path]:
         if self._files is None:
             self._files = []
-            self._files.extend(sorted(self.data_dir.glob("*")))
+            self._files.extend(sorted(glob.glob(os.path.join(self.data_dir, "*", "*"))))
         return self._files
 
     def __post_init__(self):
