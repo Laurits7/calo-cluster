@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import awkward as ak
@@ -366,8 +367,8 @@ def main(cfg: DictConfig) -> None:
     test_loader = datamodule.test_dataloader()
     print("Datamodule instantiated and test_loader set up.")
 
-    # with torch.no_grad():
-    #     evaluate_training(test_loader, model)
+    with torch.no_grad():
+        EncodingEvaluator(model=model, test_loader=test_loader)
 
 
 if __name__ == "__main__":
