@@ -304,9 +304,7 @@ class EncodingEvaluator:
         )
         axs = axs.flatten()
         num_plots = min(len(axs), len(self.true_labels))
-        for idx, ax in enumerate(axs):
-            if (idx + 1) > num_plots:
-                continue
+        for idx in range(num_plots):
             event_reco_labels = self.DBSCAN_clusters[idx]
             event_hit_coordinates = self.hit_coordinates[idx]
             unique_true_labels = np.unique(self.true_labels[idx])
